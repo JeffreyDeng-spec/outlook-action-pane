@@ -11,11 +11,37 @@ from mail_accounts import GRAPH_KEYCHAINS, account_state
 from outlook_triage import GRAPH, IMMUTABLE_ID, PreviewError, decision_key
 from test_windows_worker import FakeGraph
 from windows_migration import import_backups
-from windows_production_worker import ProductionAdapter, ProductionWorker
+from windows_production_worker import ProductionAdapter, ProductionWorker, program_announcement
+from unittest.mock import Mock
 
 
 A, B = GRAPH_KEYCHAINS
 STAMP = datetime(2026, 11, 1, tzinfo=timezone.utc)
+
+
+class ProgramAnnouncementTests(TestCase):
+    def test_general_change_requires_subject_and_body_and_excludes_personal_events(self):
+        mail = {"id": "abc", "parentFolderId": "in", "subject": "2028 年，星旅全新升级",
+                "from": {"emailAddress": {"address": "program@hotel.example.test"}}}
+        programs = {"program@hotel.example.test": "星旅"}
+        text = "尊敬的会员：星旅将于 2028 年 1 月 1 日迎来全新升级。"
+        adapter = Mock()
+        body = {"contentType": "text", "content": text}
+        adapter.read.return_value = {"id": "abc", "parentFolderId": "in", "uniqueBody": body}
+        self.assertIsNone(program_announcement(mail, {}, adapter, "token"))
+        self.assertIsNone(program_announcement(dict(mail, subject="您的预订已确认"), programs, adapter, "token"))
+        adapter.read.assert_not_called()
+        self.assertEqual(program_announcement(mail, programs, adapter, "token")["target"], "Junk")
+        for sample in ("仅显示会员积分余额。", text + "您的预订已更新。", text + "预订确认号 ABC123。",
+                       text + "您的会员等级已更新。", text + "验证码请查收。"):
+            with self.subTest(sample=sample):
+                body["content"] = sample
+                self.assertIsNone(program_announcement(mail, programs, adapter, "token"))
+        body["content"] = text
+        adapter.read.return_value["parentFolderId"] = "another"
+        self.assertIsNone(program_announcement(mail, programs, adapter, "token"))
+        adapter.read.side_effect = PreviewError("unavailable")
+        self.assertIsNone(program_announcement(mail, programs, adapter, "token"))
 
 
 def fake_backend(account, fake, gate):
