@@ -26,7 +26,7 @@ The production worker uses Windows user-scoped DPAPI for OAuth and provider cred
 
 A single worker owns production mail moves. During migration, pause the previous writer, transfer consistent SQLite backups, verify both accounts' delta cursors and only then grant move authority. Preserve the latest state before any rollback.
 
-An account can opt in to filing Chinese loyalty-program announcements by placing a private `program-senders.json` in its Windows state directory. Map a lowercase sender address to the program name, for example `{"news@hotel.example.test":"星旅"}`. A matching announcement title triggers a local check of the plain-text message for a program-wide change. Reservation, billing and personal membership notices keep their existing routing. The worker reads the preference on its next scan.
+For sparse or inconclusive previews, the Windows worker checks the same message's Graph plain-text body and supplies Jev with up to 1,200 characters of locally screened and cleaned evidence. Jev distinguishes a program-wide membership announcement from a change to a specific booking, invoice or member tier. Both accounts use this policy across senders. The previous sender mapping is no longer used. The worker preserves folder placement when it cannot verify the evidence, and retries temporary Graph failures.
 
 ### Update an existing Mac pane
 
