@@ -142,8 +142,8 @@ class ProductionWorker(Worker):
             raise PreviewError("Windows action writer is paused")
         with closing(sqlite3.connect((self.directory(account) / "decisions.sqlite3").as_uri() + "?mode=rw", uri=True)) as db:
             ensure_actions(db)
-            update_action(db, ident, command)
-        return {"account": account, "id": ident, "command": command}
+            visible = update_action(db, ident, command)
+        return {"account": account, "id": ident, "command": command, "visible": visible}
 
     def backfill_actions(self, db, account, token):
         # Adopt existing checked IDs independently of the move queue and Graph cursors.

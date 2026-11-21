@@ -186,6 +186,12 @@ def update_action(db, ident, command):
     with db:
         if not db.execute("UPDATE message_actions SET state=? WHERE id=?", (state, ident)).rowcount:
             raise KeyError("Unknown action")
+        if command == "undo":
+            return db.execute(
+                "SELECT 1 FROM message_actions WHERE id=? AND state='open' AND (expires='' OR expires>?)",
+                (ident, utcstamp(datetime.now(timezone.utc))),
+            ).fetchone() is not None
+    return False
 
 
 def prepare_replies(db, adapter, token):

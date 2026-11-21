@@ -137,9 +137,12 @@ async function mutate(task, command) {
   version++;
   const feedback = byId("feedback");
   try {
-    await request("actions/" + encodeURIComponent(task.id) + "/" + command, task.account, "POST");
+    const receipt = await request("actions/" + encodeURIComponent(task.id) + "/" + command, task.account, "POST");
     const data = snapshots.get(task.account);
     if (data && command !== "undo") data.items = data.items.filter(t => t.id !== task.id);
+    if (data && command === "undo" && receipt.visible && !data.items.some(t => t.id === task.id)) {
+      data.items.push(task);
+    }
     render();
     feedback.replaceChildren(el("span", {done:"已标记完成", ignore:"已移出待办", undo:"已撤销"}[command]));
     if (command !== "undo") {
