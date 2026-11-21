@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>需要我处理</title>
+  <link rel="stylesheet" href="pane.css">
+  <script async id="office-runtime" src="https://officeapis.public.onecdn.static.microsoft/1/office.js"></script>
+  <script defer src="pane.js"></script>
+</head>
+<body>
+  <main>
+    <header><h1>需要我处理</h1><span id="count"></span></header>
+    <p id="connection" role="status">正在加载待办…</p>
+    <section id="items" aria-label="待办邮件"></section>
+    <p id="empty" hidden>目前没有需要你处理的邮件。</p>
+    <div id="feedback" role="status"></div>
+  </main>
+</body>
+</html>

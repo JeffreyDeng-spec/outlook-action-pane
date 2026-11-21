@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+    xsi:type="MailApp">
+  <Id>00e6f444-07cb-49d3-92a4-cc640761e174</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Outlook Triage</ProviderName>
+  <DefaultLocale>zh-CN</DefaultLocale>
+  <DisplayName DefaultValue="需要我处理"/>
+  <Description DefaultValue="查看邮件中的具体待办事项"/>
+  <IconUrl DefaultValue="__BASE__/icon-64.png"/>
+  <SupportUrl DefaultValue="__BASE__/"/>
+  <Hosts><Host Name="Mailbox"/></Hosts>
+  <Requirements><Sets><Set Name="Mailbox" MinVersion="1.1"/></Sets></Requirements>
+  <FormSettings><Form xsi:type="ItemRead"><DesktopSettings>
+    <SourceLocation DefaultValue="__BASE__/"/><RequestedHeight>350</RequestedHeight>
+  </DesktopSettings></Form></FormSettings>
+  <Permissions>Restricted</Permissions>
+  <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
+  <DisableEntityHighlighting>false</DisableEntityHighlighting>
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements><bt:Sets DefaultMinVersion="1.3"><bt:Set Name="Mailbox"/></bt:Sets></Requirements>
+    <Hosts><Host xsi:type="MailHost"><DesktopFormFactor>
+      <FunctionFile resid="Pane.Url"/>
+      <ExtensionPoint xsi:type="MessageReadCommandSurface"><OfficeTab id="TabDefault"><Group id="ActionPane.Group">
+        <Label resid="Group.Name"/>
+        <Control xsi:type="Button" id="ActionPane.Open">
+          <Label resid="Pane.Name"/>
+          <Supertip><Title resid="Pane.Name"/><Description resid="Pane.Description"/></Supertip>
+          <Icon><bt:Image size="16" resid="Icon.16"/><bt:Image size="32" resid="Icon.32"/><bt:Image size="80" resid="Icon.80"/></Icon>
+          <Action xsi:type="ShowTaskpane"><SourceLocation resid="Pane.Url"/></Action>
+        </Control>
+      </Group></OfficeTab></ExtensionPoint>
+    </DesktopFormFactor></Host></Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="Icon.16" DefaultValue="__BASE__/icon-16.png"/>
+        <bt:Image id="Icon.32" DefaultValue="__BASE__/icon-32.png"/>
+        <bt:Image id="Icon.80" DefaultValue="__BASE__/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls><bt:Url id="Pane.Url" DefaultValue="__BASE__/"/></bt:Urls>
+      <bt:ShortStrings><bt:String id="Group.Name" DefaultValue="邮件"/><bt:String id="Pane.Name" DefaultValue="需要我处理"/></bt:ShortStrings>
+      <bt:LongStrings><bt:String id="Pane.Description" DefaultValue="打开两个邮箱的行动清单"/></bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>
