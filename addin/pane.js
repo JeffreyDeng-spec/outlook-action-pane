@@ -75,7 +75,8 @@ function render() {
   tasks.sort((a,b) => Number(b.kind === "verify") - Number(a.kind === "verify") ||
     Number(Boolean(b.due)) - Number(Boolean(a.due)) ||
     (Date.parse(b.received) || 0) - (Date.parse(a.received) || 0) || a.id.localeCompare(b.id));
-  const partial = !accountList.length || accountList.some(a => accountsWithErrors.has(a) || !snapshots.get(a)?.sync_ok);
+  const partial = !accountList.length || accountList.some(a =>
+    accountsWithErrors.has(a) || !snapshots.get(a)?.sync_ok || snapshots.get(a)?.backfilling);
   byId("count").textContent = tasks.length ? tasks.length + " 项" : "";
   byId("empty").hidden = tasks.length > 0 || partial;
   const key = JSON.stringify(tasks);
@@ -91,7 +92,10 @@ function render() {
   if (partial) {
     const messages = [];
     for (const account of accountList) {
-      if (!accountsWithErrors.has(account) && snapshots.get(account)?.sync_ok) continue;
+      if (!accountsWithErrors.has(account) && snapshots.get(account)?.sync_ok) {
+        if (snapshots.get(account)?.backfilling) messages.push(account + " 正在整理已有邮件");
+        continue;
+      }
       const last = formatSync(snapshots.get(account)?.last_sync);
       messages.push(account + " 同步中断" + (last ? "，上次成功同步 " + last : "，最新待办暂不可用"));
     }

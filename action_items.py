@@ -33,6 +33,10 @@ EXPIRY = re.compile(r"(?:有效(?:期)?|失效|valid (?:for|within)|expires? (?:
 DUE = re.compile(r"(?:本?周[一二三四五六日天]|星期[一二三四五六日天]|今天|明天|\d{1,2}月\d{1,2}日)(?:[上下午晚]午?)?\s*(?:\d{1,2}[:：]\d{2}|\d{1,2}点)?\s*(?:之?前|截止)|\bby (?:this |next )?(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|\d{4}-\d\d-\d\d)(?: at \d{1,2}(?::\d{2})?(?:\s?[ap]m)?)?", re.I)
 OTHER = re.compile(r"\b(?:sign|approve|renew|review|update|choose|select|confirm|schedule|pay)\b|签署|批准|审核|调整|续费|缴费|选择|确认|预约", re.I)
 SAFE_RECEIPT = re.compile(r"confirm (?:that you (?:have )?received|receipt)|acknowledge receipt|确认(?:已经?|已)?收到|回复.{0,4}收悉", re.I)
+ASSESSMENT_REQUEST = re.compile(r"\b(?:complete|finish|take)\b.{0,48}\b(?:assessment|coding challenge)\b|(?:完成|参加).{0,16}(?:测评|笔试|在线测试)", re.I)
+EXTERNAL_STEP = re.compile(r"https?[:/]|www\.|\b[a-z0-9-]+\.[a-z]{2,}\b|"
+                           r"\b(?:link|click|download|install|attach(?:ed|ment)?|upload|password|pay|payment|transfer|gift card|log[- ]?in|sign[- ]?in)\b|"
+                           r"链接|点击|下载|安装|附件|上传|密码|付款|支付|转账|缴费|登录|证件|银行卡", re.I)
 
 
 def sentences(message):
@@ -50,7 +54,8 @@ def sentences(message):
 def eligible_inbox(row):
     scores = row.get("scores", [])
     return (row["source"] == "Inbox" and row["target"] != "Junk"
-            and not (scores and scores[0][0] in {"junk", "marketing"}))
+            and not (scores and (scores[0][0] == "marketing" or
+                                 (scores[0][0] == "junk" and clears(scores[0], "junk", .90)))))
 
 
 def needs_full_text(message, row):
@@ -81,6 +86,20 @@ def action_for(message, row):
     reply_subject = re.match(r"^\s*(?:re|fw|fwd|回复|转发)\s*[:：]", subject, re.I)
     code = any(VERIFY.search(line) for line in eligible if not reply_subject or line in parts)
     result = dict(source=domain(message), received=message["receivedDateTime"], due="", expires="", reply="")
+    scores = row.get("scores", [])
+    required = len(scores) > 1 and scores[1][0] == "required" and clears(scores[1], "required")
+    if scores and scores[0][0] in {"junk", "unclear"}:
+        # A weak nature vote can disagree with a concrete request. Allow only
+        # a local reminder to check the user's existing portal, with no delegated side effect.
+        request = next((line for line in eligible
+                        if REQUEST.search(line) and ASSESSMENT_REQUEST.search(line)), "")
+        if (request and (required or DUE.search(request)) and not sensitive
+                and not code and not EXTERNAL_STEP.search(content)):
+            due = DUE.search(content)
+            return dict(result, kind="material", title="到申请平台核对在线测评",
+                        due=due[0].strip() if due else "",
+                        detail="请从你原先使用的申请平台查看是否有待完成的测评。")
+        return None
     if code and not re.search(r"(?:code|passcode) (?:has |is )?expired|验证码已(?:经)?(?:过期|失效)", content, re.I):
         match = EXPIRY.search(content)
         if match:
@@ -91,9 +110,7 @@ def action_for(message, row):
         return dict(result, kind="verify", title="完成邮箱或登录验证", detail="如果你刚刚发起了这项操作，请打开原邮件，并在你使用的官方页面完成验证。")
     if sensitive:
         return None
-    scores = row.get("scores", [])
     explicit = [line for line in eligible if REQUEST.search(line)]
-    required = len(scores) > 1 and scores[1][0] == "required" and clears(scores[1], "required")
     for line in eligible:
         if INTERVIEW.search(content) and INVITE.search(line) and (line in explicit or required or INTERVIEW.search(line)):
             kind, title = "interview", "选择或确认面试时间"
@@ -103,10 +120,12 @@ def action_for(message, row):
             kind, title = "material", "提交" + ("成绩单" if re.search(r"transcript|成绩单", content, re.I) else "所需材料")
         elif line in explicit and REPLY.search(line):
             kind, title = "reply", "回复来信"
-            if required and SAFE_RECEIPT.search(line):
+            draft_ok = (required and row["target"] == "Inbox" and scores[0][0] == "legitimate"
+                        and clears(scores[0], "legitimate"))
+            if draft_ok and SAFE_RECEIPT.search(line):
                 result["reply"] = "您好，我已收到这封邮件。谢谢！" if re.search("[\u4e00-\u9fff]", line) else "Thank you for your email. I confirm receipt."
                 title = "回复确认收悉"
-            elif required:
+            elif draft_ok:
                 result["reply"] = ("您好，感谢来信。关于您提到的问题，[请在此填写答复]。"
                                    if re.search("[\u4e00-\u9fff]", line) else
                                    "Thank you for your email. In response to your question, [add your answer here].")

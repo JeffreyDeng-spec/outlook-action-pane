@@ -97,7 +97,8 @@ class BridgeClient:
                             or not re.fullmatch(r"[0-9a-f]{32}", row["id"])):
                         raise ValueError()
                     items.append({k: row[k] for k in fields})
-                return {"account": account, "items": items, "sync_ok": result["sync_ok"], "last_sync": result["last_sync"]}
+                return {"account": account, "items": items, "sync_ok": result["sync_ok"],
+                        "last_sync": result["last_sync"], "backfilling": result.get("backfilling") is True}
             if command:
                 if (result.get("id"), result.get("command")) != command:
                     raise ValueError()

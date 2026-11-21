@@ -3,6 +3,7 @@ from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
+import json
 from tempfile import TemporaryDirectory
 import unittest
 
@@ -55,6 +56,22 @@ class ActionItemsTests(unittest.TestCase):
         self.assertEqual((item["kind"],item["due"]), ("material","by Friday"))
         self.assertNotIn("secret-token", str(item))
 
+    def test_uncertain_spam_vote_allows_only_a_grounded_local_assessment_reminder(self):
+        row = {**ROW, "target":"review", "scores":[("junk",.74,.65),("required",.82,.73)]}
+        msg = mail("招聘进展", "请在周五前完成在线测评。")
+        item = action_for(msg, row)
+        self.assertEqual((item["kind"], item["due"], item["reply"]), ("material", "周五前", ""))
+        for extra in ("请访问 https://example.test/", "请先支付并上传证件。", "请先登录并输入验证码。",
+                      "Download the attached file.", "Please enter your password."):
+            self.assertIsNone(action_for(mail("招聘进展", msg["bodyPreview"] + extra), row), extra)
+        self.assertIsNone(action_for(msg, {**row, "scores":[("junk",.98,.95),("required",.82,.73)]}))
+        below = {**row, "scores":[("junk",.72,.63),("required",.79,.68)]}
+        self.assertEqual(action_for(msg, below)["due"], "周五前")
+        self.assertIsNone(action_for(mail("招聘进展", "请完成在线测评。"), below))
+        self.assertIsNone(action_for(mail("招聘进展", "请完成在线测评。请在周五前领取礼品。"), below))
+        self.assertIsNone(action_for(mail("招聘进展", "请在周五前完成在线测评。登录后先支付报名费。"), below))
+        self.assertIsNone(action_for(mail("Your verification code", "Use it to sign in."), row))
+
     def test_otp_local_and_expiration(self):
         msg = mail("Your verification code is 843612", "Use it to sign in. Valid for 10 minutes.")
         row = {**ROW, "target": "review", "scores": []}
@@ -80,6 +97,11 @@ class ActionItemsTests(unittest.TestCase):
         long_mail = mail("Application", "Thank you for your interest. " * 12 + "Please complete the assessment.")
         self.assertTrue(needs_full_text(long_mail, ROW))
         self.assertFalse(needs_full_text(long_mail, {**ROW, "target":"Junk"}))
+        self.db.execute("CREATE TABLE decisions(id TEXT PRIMARY KEY,result TEXT)")
+        self.db.execute("INSERT INTO decisions VALUES (?,?)", (otp["id"], json.dumps({"target": "Junk"})))
+        fake_backend(A, FakeGraph(), lambda: True).capture_action(
+            self.db, otp, {"model":"local-no-provider","source":"Inbox","target":"review"}, "")
+        self.assertEqual(open_actions(self.db), [])
 
     def test_normal_mail_recovered_from_junk_including_lost_receipt(self):
         with TemporaryDirectory() as tmp:
