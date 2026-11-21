@@ -85,6 +85,13 @@ class ProductionAdapter(ProductionTrialAdapter):
                          token=token, headers=IMMUTABLE_ID, payload={"comment": comment})
 
     def capture_action(self, db, message, row, token, *, historical=False):
+        if row.get("model") == "local-no-provider":
+            saved = db.execute("SELECT result FROM decisions WHERE id=?", (message["id"],)).fetchone()
+            if saved:
+                cached = json.loads(saved[0])
+                scores = cached.get("scores", [])
+                if cached.get("target") == "Junk" or (scores and scores[0][0] in {"junk", "marketing"}):
+                    return
         if needs_full_text(message, row):
             url = f"{GRAPH}/me/messages/{quote(message['id'], safe='')}?%24select=id,parentFolderId,uniqueBody"
             try:
@@ -127,6 +134,7 @@ class ProductionWorker(Worker):
             last = db.execute("SELECT value FROM event_settings WHERE key='last_action_scan'").fetchone()
             return {"account": account, "items": open_actions(db),
                     "last_sync": last[0] if last else "",
+                    "backfilling": bool(db.execute("SELECT 1 FROM action_backfill LIMIT 1").fetchone()),
                     "sync_ok": self.status(account)["push"] == "online" and self.last_scan_ok[account] is True}
 
     def update_action(self, account, ident, command):
@@ -134,8 +142,8 @@ class ProductionWorker(Worker):
             raise PreviewError("Windows action writer is paused")
         with closing(sqlite3.connect((self.directory(account) / "decisions.sqlite3").as_uri() + "?mode=rw", uri=True)) as db:
             ensure_actions(db)
-            update_action(db, ident, command)
-        return {"account": account, "id": ident, "command": command}
+            visible = update_action(db, ident, command)
+        return {"account": account, "id": ident, "command": command, "visible": visible}
 
     def backfill_actions(self, db, account, token):
         # Adopt existing checked IDs independently of the move queue and Graph cursors.
@@ -146,6 +154,14 @@ class ProductionWorker(Worker):
                 db.execute("""INSERT OR IGNORE INTO action_backfill SELECT id FROM event_checked
                             WHERE id NOT IN (SELECT message FROM message_actions)
                             AND id NOT IN (SELECT id FROM mailbox_moves WHERE state='pending')""")
+            revised = db.execute("INSERT OR IGNORE INTO event_settings VALUES ('assessment_reminder_v3','1')").rowcount
+            if revised and not first:
+                db.execute("""INSERT OR IGNORE INTO action_backfill SELECT d.id FROM decisions d
+                           JOIN event_checked c ON c.id=d.id
+                           WHERE json_valid(d.result) AND json_extract(d.result,'$.scores[0][0]') IN ('junk','unclear')
+                           AND json_extract(d.result,'$.target')<>'Junk'
+                           AND d.id NOT IN (SELECT message FROM message_actions)
+                           AND d.id NOT IN (SELECT id FROM mailbox_moves WHERE state='pending')""")
         batch = db.execute("""SELECT b.message,d.result FROM action_backfill b LEFT JOIN decisions d
                            ON d.id=b.message ORDER BY d.received DESC,b.message LIMIT 6""").fetchall()
         for ident, cached in batch:

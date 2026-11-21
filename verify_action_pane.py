@@ -77,7 +77,7 @@ def verify(root, screenshot=None, channel=None):
         # The production constructor reads a POSIX owner-only file on the Mac.
         # Use ephemeral in-memory credentials to run these same HTTPS requests on Windows.
         bridge = BridgeClient.__new__(BridgeClient)
-        bridge.base = f"https://localhost:{worker_port}"
+        bridge.base = f"https://127.0.0.1:{worker_port}"
         bridge.token, bridge.accounts = bearer, frozenset(accounts)
         bridge.opener = build_opener(ProxyHandler({}), HTTPSHandler(context=ssl.create_default_context(cafile=str(cert))), _NoRedirect())
         server = ThreadingHTTPServer(("127.0.0.1", 0), None)
@@ -107,8 +107,11 @@ def verify(root, screenshot=None, channel=None):
                 expect(first.get_by_role("link", name="打开原邮件")).to_have_attribute("href", "https://outlook.live.com/mail/")
                 first.get_by_role("button", name="标记已完成").click()
                 expect(page.locator("article")).to_have_count(1)
+                # A successful undo restores the card even while the next full list refresh is unavailable.
+                page.route("**/accounts", lambda route: route.fulfill(status=503))
                 page.get_by_role("button", name="撤销").click()
                 expect(page.locator("article")).to_have_count(2)
+                page.unroute("**/accounts")
                 for _ in range(2):
                     page.locator("article").first.locator("summary").click()
                     page.locator("article").first.get_by_role("button", name="无需处理").click()

@@ -26,6 +26,17 @@ The production worker uses Windows user-scoped DPAPI for OAuth and provider cred
 
 A single worker owns production mail moves. During migration, pause the previous writer, transfer consistent SQLite backups, verify both accounts' delta cursors and only then grant move authority. Preserve the latest state before any rollback.
 
+### Update an existing Mac pane
+
+Use a reviewed release checkout on the Mac after the Windows worker serves the action API. Pass the private project containing the installed add-in assets. The utility preserves the existing manifest, access path, TLS certificate, SSH tunnel configuration and handoff script. It saves the previous five service and asset files in a private backup, restarts the running pane LaunchAgent, then checks the live assets and both mailbox views over authenticated localhost HTTPS. A failed health check restores the previous files and restarts the pane. The existing Outlook ribbon label comes from the installed manifest.
+
+```sh
+python3 -B tools/install_mac_pane.py --project "/path/to/existing/outlook-triage"
+python3 -B tools/install_mac_pane.py --project "/path/to/existing/outlook-triage" --verify-only
+```
+
+Supply `--state` when the existing Mac installation uses a custom state directory. For an existing Windows installation, the equivalent owner-scoped host is `windows_pane.py`. Its private `windows-pane/manifest.xml` is generated at install time and contains the local access path.
+
 ## Contributions
 
 Use the [contribution guide](CONTRIBUTING.md) for behavior changes and the [security policy](SECURITY.md) for private reports.

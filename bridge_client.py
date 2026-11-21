@@ -97,11 +97,15 @@ class BridgeClient:
                             or not re.fullmatch(r"[0-9a-f]{32}", row["id"])):
                         raise ValueError()
                     items.append({k: row[k] for k in fields})
-                return {"account": account, "items": items, "sync_ok": result["sync_ok"], "last_sync": result["last_sync"]}
+                return {"account": account, "items": items, "sync_ok": result["sync_ok"],
+                        "last_sync": result["last_sync"], "backfilling": result.get("backfilling") is True}
             if command:
                 if (result.get("id"), result.get("command")) != command:
                     raise ValueError()
-                return {"account": account, "id": command[0], "command": command[1]}
+                receipt = {"account": account, "id": command[0], "command": command[1]}
+                if type(result.get("visible")) is bool:
+                    receipt["visible"] = result["visible"]
+                return receipt
             if route == "preview":
                 if not isinstance(result.get("window"), str) or not isinstance(result.get("messages"), list):
                     raise ValueError()

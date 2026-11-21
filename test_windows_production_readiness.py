@@ -4,10 +4,12 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Event, Thread
+from time import monotonic, sleep
 from unittest import TestCase
 from unittest.mock import patch
 
 from mail_accounts import GRAPH_KEYCHAINS
+from windows_pilot import ListenerSupervisor
 from windows_production_trial import listener_trial, trial_ready
 from windows_worker import Worker
 from worker_safety import exclusive_lock
@@ -43,17 +45,32 @@ class ListenerRegression(TestCase):
             self.assertFalse(trial_ready(report))
 
     def test_live_listeners_without_current_graph_success_are_not_ready(self):
+        rejected = Event()
         class Broken(Adapter):
             def folder_reader(self,folder):
-                if folder=="junkemail": raise OSError("synthetic Graph failure")
+                if folder=="junkemail":
+                    rejected.set()
+                    raise OSError("synthetic Graph failure")
                 return super().folder_reader(folder)
         with TemporaryDirectory() as temp, patch("socket.create_connection",side_effect=AssertionError):
-            worker=Worker(Path(temp),{A:Adapter(),B:Broken()},pilot=True,folder_bound=True)
+            worker=Worker(Path(temp).resolve(strict=True),{A:Adapter(),B:Broken()},pilot=True,folder_bound=True)
             worker.last_scan_ok[B]=True
             def watcher(folder,stop,wake,status,account,*,get_token):
                 status(folder,True); stop.wait()
-            report,closed=listener_trial(worker,.5,watcher=watcher)
-            self.assertTrue(closed)
+            supervisor=ListenerSupervisor(worker, watcher=watcher)
+            supervisor.start()
+            try:
+                self.assertTrue(rejected.wait(15), "The broken mailbox must attempt its Graph scan")
+                deadline = monotonic() + 15
+                while True:
+                    report = supervisor.readiness()
+                    if (report[A]["graph"] and worker.last_scan_ok[B] is False
+                            and all(row["inbox"] and row["junkemail"] for row in report.values())):
+                        break
+                    self.assertLess(monotonic(), deadline, "Folder listeners or healthy mailbox did not start")
+                    sleep(.02)
+            finally:
+                self.assertTrue(supervisor.close_before_unlock())
             self.assertTrue(report[A]["graph"])
             self.assertFalse(report[B]["graph"])
             self.assertFalse(trial_ready(report))

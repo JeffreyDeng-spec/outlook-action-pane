@@ -43,7 +43,7 @@ class ProductionWorkerTests(TestCase):
     def setUp(self):
         folder = TemporaryDirectory()
         self.addCleanup(folder.cleanup)
-        self.root = Path(folder.name) / "state"
+        self.root = Path(folder.name).resolve(strict=True) / "state"
         self.first, self.second = FakeGraph(), FakeGraph()
         self.enabled = True
         self.gate = lambda: self.enabled
