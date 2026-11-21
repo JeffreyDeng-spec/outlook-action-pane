@@ -3,14 +3,13 @@
 from contextlib import closing
 from datetime import datetime, timezone
 import json
-import re
 import sqlite3
-import unicodedata
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 from uuid import uuid4
 
 from action_items import ensure_actions, needs_full_text, open_actions, prepare_replies, record_action, update_action
 from event_sync import collect_folder, event_tables, process_queue
+from filing_evidence import classify_with_body
 from outlook_triage import (
     CLASSIFICATION_FIELDS,
     FOLDERS,
@@ -33,44 +32,6 @@ MESSAGE_FIELDS = set(("id,receivedDateTime,parentFolderId," + CLASSIFICATION_FIE
 CHECK_FIELDS = {"id", "parentFolderId", "changeKey"}
 RECEIPT_FIELDS = {"id", "parentFolderId"}
 
-# An opted-in program must itself be the subject of the change. A member's own
-# reservation, balance or tier can change independently of the program.
-PROGRAM_CHANGE = r"(?:会员计划|會員計劃)?(?:全新升级|全面升级|焕新升级|计划更新|规则更新)"
-PERSONAL_EVENT = re.compile(
-    r"(?:您的|你的|本次)(?:酒店)?(?:预订|订单|入住|退款|账单|付款|会籍|会员等级|积分即将到期)"
-    r"|(?:预订|订单|确认)(?:号|编号)|预订确认|入住确认|积分到期|验证码|安全提醒"
-    r"|(?:reservation|booking|confirmation)\s*(?:number|code|confirmed|#)|your (?:stay|reservation|refund|invoice)"
-    r"|请(?:您)?(?:确认预订|支付|取消预订|验证身份)", re.I)
-
-
-def program_announcement(message, programs, adapter, token):
-    sender = message.get("from", {}).get("emailAddress", {}).get("address", "").casefold()
-    program = programs.get(sender)
-    if not program:
-        return None
-    name = re.escape(program)
-    subject = unicodedata.normalize("NFKC", message.get("subject", "")).strip()
-    if not re.fullmatch(r"(?:20\d\d\s*年\s*[,，:：]?\s*)?" + name + PROGRAM_CHANGE, subject):
-        return None
-    ident = message["id"]
-    url = f"{GRAPH}/me/messages/{quote(ident, safe='')}?%24select=id,parentFolderId,uniqueBody"
-    try:
-        expanded = adapter.read(url, "Graph program announcement", token=token, headers=IMMUTABLE_ID)
-    except PreviewError:
-        return None
-    if expanded.get("id") != ident or expanded.get("parentFolderId") != message.get("parentFolderId"):
-        return None
-    body = expanded.get("uniqueBody") or {}
-    content = body.get("content")
-    if body.get("contentType", "").lower() != "text" or not isinstance(content, str) or len(content) > 50000:
-        return None
-    text = unicodedata.normalize("NFKC", content)
-    if PERSONAL_EVENT.search(text):
-        return None
-    if re.search(name + r"(?:会员计划)?(?:将于|将|于)[^。！？\n]{0,36}?(?:迎来|实施|推出)?" + PROGRAM_CHANGE, text):
-        return {"target": "Junk", "reason": "已选择过滤此会员计划的整体更新公告",
-                "model": "local-program-announcement", "scores": [], "signals": {}}
-    return None
 
 
 def request_path(url):
@@ -275,25 +236,15 @@ class ProductionWorker(Worker):
                 def provider(message, key, model):
                     if not self.write_allowed():
                         raise PreviewError("Windows handover ended before classification")
-                    return self.classifier(message, key, model)
+                    return classify_with_body(message, key, model, adapter.read, token, self.classifier)
 
                 def move(db, rows, token):
                     return apply_moves(db, rows, token, read=adapter.read, write=adapter.write)
 
-                try:
-                    programs = json.loads((directory / "program-senders.json").read_text(encoding="utf-8"))
-                    if not isinstance(programs, dict) or not all(isinstance(v, str) and v.strip()
-                                                                 for v in programs.values()):
-                        programs = {}
-                except (OSError, ValueError):
-                    programs = {}
-
-                def review(message):
-                    return local_review(message) or program_announcement(message, programs, adapter, token)
 
                 _, counts, failure = process_queue(
                     db, token, self.key, floor, read=adapter.read, classifier=provider,
-                    mover=move, review=review, publish=lambda rows: self.publish(account, rows),
+                    mover=move, review=local_review, publish=lambda rows: self.publish(account, rows),
                     record=lambda db, msg, row: adapter.capture_action(db, msg, row, token),
                     restored=lambda db, ident: db.execute(
                         "INSERT OR IGNORE INTO action_backfill(message) VALUES (?)", (ident,)),

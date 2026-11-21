@@ -44,7 +44,7 @@ QUESTIONS = {
                         "personal Inbox and Junk policy?",
         "criteria": {
             "marketing": "Optional bulk promotional offer, coupon, sales campaign, member "
-                         "discount, or editorial newsletter linking to general interest stories. "
+                         "discount, program-wide loyalty news (benefits, earning rules or tier policies for all members), or an editorial newsletter. "
                          "Examples are seasonal retail offers, bank rewards sales, or an "
                          "automotive news headline sent by a marketing newsletter. Even a genuine "
                          "or subscribed campaign belongs here, including offers worded as tasks.",
@@ -52,7 +52,8 @@ QUESTIONS = {
             "legitimate": "Genuine personal or work correspondence, application updates, account "
                           "security, verification codes, orders, receipts, payments, delivery "
                           "updates or other messages the recipient may need. A real transaction "
-                          "or account notice stays here even if it also advertises an offer.",
+                          "or personal notice stays here even if it advertises an offer. A confirmed booking, invoice, "
+                          "personal points expiry or change to this member's actual tier is legitimate.",
             "unclear": "The excerpt does not distinguish a wanted message from a campaign or scam.",
         },
     },
@@ -83,7 +84,8 @@ QUESTIONS = {
         "criteria": {
             "true": "A sales campaign, coupon, bonus or reward to claim, editorial newsletter, "
                     "product roundup, or automated recommendations such as suggested jobs or stores. "
-                    "Personalized suggestions, known brands and sales demos still count.",
+                    "Personalized suggestions, known brands, and loyalty program changes announced to all members count. "
+                    "A personalized greeting or points balance in the template does not change the main purpose.",
             "false": "A direct conversation, the status of an existing order or application, a "
                      "receipt, an account or security notice, or an update to the recipient's own work.",
         },
@@ -98,7 +100,8 @@ QUESTIONS = {
                     "An automated notice about one of these events still counts.",
             "false": "General sales, bonus invitations, editorial content, product launches, or a "
                      "list of suggested jobs or products. A greeting, call to action or content chosen "
-                     "using the recipient's profile does not by itself establish a specific event.",
+                    "using the recipient's profile does not by itself establish a specific event. A program-wide "
+                    "update applies to an audience even if it shows this member's name, tier or balance in a header.",
         },
     },
 }
@@ -348,6 +351,8 @@ def classification_state(email):
         "body_preview": scrub(email.get("bodyPreview"))[:255],
     }
     list_headers = {"list-id", "list-unsubscribe", "list-unsubscribe-post"}
+    if email.get("filing_excerpt"):
+        state["body_excerpt"] = email["filing_excerpt"][:1200]
     if any(str(header.get("name", "")).casefold() in list_headers
            for header in email.get("internetMessageHeaders") or [] if isinstance(header, dict)):
         state["mailing_list_header_present"] = True
@@ -368,7 +373,7 @@ def classify(email, key, model, request=request_json):
 
 
 def decision_key(email, model):
-    raw = json.dumps([model, QUESTIONS, THRESHOLDS, classification_state(email)],
+    raw = json.dumps([model, QUESTIONS, THRESHOLDS, classification_state(email), email.get("changeKey")],
                      sort_keys=True, ensure_ascii=False)
     return hashlib.sha256(raw.encode()).hexdigest()
 
